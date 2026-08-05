@@ -14,7 +14,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_CHANNELS, CONF_NAME, CONF_OUTPUTS, DOMAIN
+from .const import CONF_CHANNELS, CONF_MODULE_TYPE, CONF_NAME, CONF_OUTPUTS, DOMAIN, TYPE_SH
 from .entity import FnipChannelEntity
 from .fnip.client import FNIPClient
 
@@ -22,6 +22,9 @@ from .fnip.client import FNIPClient
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
+    if entry.data[CONF_MODULE_TYPE] != TYPE_SH:
+        return
+
     client: FNIPClient = hass.data[DOMAIN][entry.entry_id]
     outputs = entry.data[CONF_CHANNELS][CONF_OUTPUTS]
 
