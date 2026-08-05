@@ -30,10 +30,17 @@ async def async_setup_entry(
 
 
 class FnipBinarySensor(FnipChannelEntity, BinarySensorEntity):
-    """A physical input channel (button/switch/contact) on a FNIP module."""
+    """A physical input channel (wall switch/button/contact) on a FNIP module.
+
+    Named distinctly from its paired output entity (both otherwise share the
+    channel's configured name, e.g. "Korytarz") so it reads unambiguously as
+    the physical switch's state, not another control for the same light.
+    """
+
+    _attr_icon = "mdi:light-switch"
 
     def __init__(self, client: FNIPClient, entry: ConfigEntry, channel: str, name: str) -> None:
-        super().__init__(client, entry, channel, name, "input")
+        super().__init__(client, entry, channel, f"{name} (wyłącznik ścienny)", "input")
         self._attr_is_on: bool | None = None
 
     async def async_added_to_hass(self) -> None:
