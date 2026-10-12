@@ -1,0 +1,83 @@
+name: Release
+
+# Every merge to main that touches the integration cuts a new release.
+# The bump is chosen by labels on the merged PR:
+#   release:major / release:minor -> that bump, otherwise patch
+#   no-release                    -> skip
+# The version bump is committed only under the release tag (not pushed to
+# main), so main can stay protected; HACS installs from the tag.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "custom_components/**"
+      - "hacs.json"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Publish a release for an existing tag (e.g. v0.5.0); leave empty to cut a new patch release"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MANIFEST: custom_components/fnip/manifest.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || 'main' }}
+          fetch-depth: 0
+
+      - name: Publish existing tag
+        if: ${{ github.event.inputs.tag }}
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          echo "DONE=1" >> "$GITHUB_ENV"
+
+      - name: Pick version bump from PR labels
+        if: ${{ !env.DONE }}
+        run: |
+          labels=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
+            --jq '[.[0].labels[]?.name] | join(",")' 2>/dev/null || true)
+          echo "PR labels: ${labels:-<none>}"
+          case ",$labels," in
+            *,no-release,*)    bump=skip ;;
+            *,release:major,*) bump=major ;;
+            *,release:minor,*) bump=minor ;;
+            *)                 bump=patch ;;
+          esac
+          echo "BUMP=$bump" >> "$GITHUB_ENV"
+
+      - name: Bump manifest, tag and release
+        if: ${{ !env.DONE && env.BUMP != 'skip' }}
+        run: |
+          latest=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n1)
+          IFS=. read -r major minor patch <<< "${latest#v}"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          version="$major.$minor.$patch"
+          echo "Releasing $latest -> v$version"
+
+          sed -i -E "s/(\"version\": *\")[^\"]*(\")/\1$version\2/" "$MANIFEST"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Release v$version"
+          git tag "v$version"
+          git push origin "v$version"
+
+          gh release create "v$version" --title "v$version" --generate-notes --verify-tag
